@@ -93,5 +93,31 @@ test('it transforms post items with fallback defaults', function () {
         'timestamp' => '2026-01-01T00:00:00Z',
         'displayUrl' => 'https://example.com/img.jpg',
         'url' => 'https://www.instagram.com/p/DEF456/',
+        'contentType' => 'Photo',
     ]);
+});
+
+test('it accurately determines post content types', function () {
+    // Reel by productType clips
+    expect($this->service->determineContentType(['productType' => 'clips']))->toBe('Reel');
+
+    // Reel by reel url
+    expect($this->service->determineContentType(['url' => 'https://instagram.com/reel/xyz123/']))->toBe('Reel');
+
+    // Carousel by sidecar type
+    expect($this->service->determineContentType(['type' => 'Sidecar']))->toBe('Carousel');
+
+    // Carousel by childPosts
+    expect($this->service->determineContentType(['childPosts' => [['id' => '1'], ['id' => '2']]]))->toBe('Carousel');
+
+    // IGTV
+    expect($this->service->determineContentType(['productType' => 'igtv']))->toBe('IGTV');
+
+    // Video
+    expect($this->service->determineContentType(['type' => 'Video']))->toBe('Video');
+    expect($this->service->determineContentType(['videoUrl' => 'https://example.com/video.mp4']))->toBe('Video');
+
+    // Standard Photo fallback
+    expect($this->service->determineContentType(['type' => 'Image']))->toBe('Photo');
+    expect($this->service->determineContentType([]))->toBe('Photo');
 });

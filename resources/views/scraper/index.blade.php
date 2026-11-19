@@ -678,6 +678,9 @@
       {
         id: "post_1",
         shortcode: "C9x0182KaL",
+        type: "Image",
+        productType: "feed",
+        contentType: "Photo",
         caption: "Laravel 11 is now released! Featuring a streamlined application structure, per-second rate limiting, health routing, and much more. Read the release notes at laravel.com/docs.",
         likesCount: 3420,
         commentsCount: 284,
@@ -688,6 +691,10 @@
       {
         id: "post_2",
         shortcode: "C8k1937LpP",
+        type: "Sidecar",
+        productType: "carousel_container",
+        contentType: "Carousel",
+        childCount: 4,
         caption: "Announcing Laracon US 2024 speakers lineup! Join over 2,000 Laravel developers in Dallas, Texas. Tickets are going fast.",
         likesCount: 2890,
         commentsCount: 142,
@@ -698,26 +705,36 @@
       {
         id: "post_3",
         shortcode: "C7m4012WqQ",
+        type: "Video",
+        productType: "clips",
+        contentType: "Reel",
         caption: "Did you know? Laravel Herd now supports Windows! Ultra-fast local PHP development environment without Docker or VM overhead.",
         likesCount: 4510,
         commentsCount: 310,
         timestamp: "2024-05-20T11:05:00Z",
         displayUrl: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=600&auto=format&fit=crop&q=80",
-        url: "https://instagram.com/p/C7m4012WqQ"
+        url: "https://instagram.com/reel/C7m4012WqQ"
       },
       {
         id: "post_4",
         shortcode: "C6n9832ZkL",
+        type: "Video",
+        productType: "clips",
+        contentType: "Reel",
         caption: "Laravel Reverb: Blazingly fast WebSocket server for your Laravel applications. Zero configuration, scalable to millions of connections.",
         likesCount: 3980,
         commentsCount: 198,
         timestamp: "2024-06-01T09:40:00Z",
         displayUrl: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80",
-        url: "https://instagram.com/p/C6n9832ZkL"
+        url: "https://instagram.com/reel/C6n9832ZkL"
       },
       {
         id: "post_5",
         shortcode: "C5p1284MmN",
+        type: "Sidecar",
+        productType: "carousel_container",
+        contentType: "Carousel",
+        childCount: 3,
         caption: "Tailwind CSS v4 compatibility with Laravel Blade templates. Clean, maintainable styling meets delightful developer ergonomics.",
         likesCount: 2430,
         commentsCount: 96,
@@ -728,6 +745,9 @@
       {
         id: "post_6",
         shortcode: "C4q9821PpO",
+        type: "Image",
+        productType: "feed",
+        contentType: "Photo",
         caption: "Tips & Tricks: Use Pest PHP for fluent testing in your modern Laravel apps. Clean assertions and effortless mock injection.",
         likesCount: 3120,
         commentsCount: 114,
@@ -740,6 +760,9 @@
     const mockHashtagData = [
       {
         id: "ht_1",
+        type: "Image",
+        productType: "feed",
+        contentType: "Photo",
         caption: "Crafting a clean clean API with Laravel and Vue 3! Exploring modern Inertia v2 features. #laravel #vuejs #php #webdev",
         likesCount: 1840,
         commentsCount: 75,
@@ -749,6 +772,10 @@
       },
       {
         id: "ht_2",
+        type: "Sidecar",
+        productType: "carousel_container",
+        contentType: "Carousel",
+        childCount: 4,
         caption: "My desk setup for building fullstack web applications. Double monitor with VS Code and Laravel docs open. #laravel #developer #setup",
         likesCount: 2950,
         commentsCount: 180,
@@ -758,15 +785,21 @@
       },
       {
         id: "ht_3",
+        type: "Video",
+        productType: "clips",
+        contentType: "Reel",
         caption: "Deploying Laravel applications to production with zero downtime using Docker and Forge. #laravel #devops #docker #backend",
         likesCount: 1420,
         commentsCount: 62,
         timestamp: "2024-07-12T08:45:00Z",
         displayUrl: "https://images.unsplash.com/photo-1607799279861-4dd421887fb3?w=600&auto=format&fit=crop&q=80",
-        url: "https://instagram.com/p/H0382def"
+        url: "https://instagram.com/reel/H0382def"
       },
       {
         id: "ht_4",
+        type: "Image",
+        productType: "feed",
+        contentType: "Photo",
         caption: "Mastering Eloquent ORM relationships: HasManyThrough and MorphTo tips for high performance SQL queries. #laravel #phpc #database",
         likesCount: 2210,
         commentsCount: 133,
@@ -1060,21 +1093,13 @@
       btnText.textContent = "Scraping...";
 
       resultsWrapper.classList.add('opacity-40', 'pointer-events-none');
-
-      // Progressive status transitions
       updateStatus('queued');
-
-      const runningTimer = setTimeout(() => {
-        if (currentStatus === 'queued') updateStatus('running');
-      }, 1000);
-
-      const processingTimer = setTimeout(() => {
-        if (currentStatus === 'running') updateStatus('processing');
-      }, 3000);
 
       try {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-        const response = await fetch('/scrape', {
+        
+        // Step 1: Start Actor run asynchronously
+        const startResponse = await fetch('/scrape', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1084,44 +1109,86 @@
           body: JSON.stringify({
             mode: currentTab,
             target: val,
-            limit: limit
+            limit: limit,
+            async: true
           })
         });
 
-        clearTimeout(runningTimer);
-        clearTimeout(processingTimer);
+        const startResult = await startResponse.json();
 
-        const result = await response.json();
-
-        if (!response.ok) {
-          const msg = result.message || (result.errors ? Object.values(result.errors).flat().join(' ') : 'Scraping request failed.');
+        if (!startResponse.ok) {
+          const msg = startResult.message || (startResult.errors ? Object.values(startResult.errors).flat().join(' ') : 'Failed to start scraping.');
           throw new Error(msg);
         }
 
-        if (result.status === 'empty' || !result.data || (Array.isArray(result.data) && result.data.length === 0)) {
-          activeDataset = [];
-          updateStatus('completed');
-          resultsWrapper.classList.remove('opacity-40', 'pointer-events-none');
-          showEmptyResult();
-          showToast("No public results found for this query");
-          return;
+        const runId = startResult.run_id;
+        if (!runId) {
+          throw new Error('No run ID returned from scraper service.');
         }
 
-        activeDataset = result.data;
-        updateStatus('completed');
-        resultsWrapper.classList.remove('opacity-40', 'pointer-events-none');
+        // Step 2: Poll run status until completed, empty, or failed
+        const maxAttempts = 60; // 60 * 2s = 120s max
+        let attempts = 0;
+        let finished = false;
 
-        // Populate raw json drawer with raw API items or transformed data
-        rawJsonContent.textContent = JSON.stringify(result.raw && result.raw.length ? result.raw : activeDataset, null, 2);
+        while (attempts < maxAttempts && !finished) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          attempts++;
 
-        // Render results for active tab
-        renderResultsForCurrentTab();
-        showToast("Instagram data extracted successfully");
+          const statusUrl = `/scrape/status/${encodeURIComponent(runId)}?mode=${encodeURIComponent(currentTab)}&target=${encodeURIComponent(val)}`;
+          const pollResponse = await fetch(statusUrl, {
+            headers: {
+              'Accept': 'application/json'
+            }
+          });
 
-        resultsWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          const pollResult = await pollResponse.json();
+
+          if (!pollResponse.ok) {
+            throw new Error(pollResult.message || 'Error checking scraping status.');
+          }
+
+          if (pollResult.status === 'queued') {
+            updateStatus('queued');
+          } else if (pollResult.status === 'running') {
+            if (attempts > 6) {
+              updateStatus('processing');
+            } else {
+              updateStatus('running');
+            }
+          } else if (pollResult.status === 'empty') {
+            finished = true;
+            activeDataset = [];
+            updateStatus('completed');
+            resultsWrapper.classList.remove('opacity-40', 'pointer-events-none');
+            showEmptyResult();
+            showToast("No public results found for this query");
+            return;
+          } else if (pollResult.status === 'completed') {
+            finished = true;
+            activeDataset = pollResult.data;
+            updateStatus('completed');
+            resultsWrapper.classList.remove('opacity-40', 'pointer-events-none');
+
+            // Populate raw json drawer
+            rawJsonContent.textContent = JSON.stringify(pollResult.raw && pollResult.raw.length ? pollResult.raw : activeDataset, null, 2);
+
+            // Render results for active tab
+            renderResultsForCurrentTab();
+            showToast("Instagram data extracted successfully");
+
+            resultsWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+          } else if (pollResult.status === 'failed') {
+            throw new Error(pollResult.message || 'Scraper execution failed.');
+          }
+        }
+
+        if (!finished) {
+          throw new Error('Scraping timed out after 120 seconds. Instagram may be rate-limiting requests.');
+        }
+
       } catch (err) {
-        clearTimeout(runningTimer);
-        clearTimeout(processingTimer);
         updateStatus('failed');
         resultsWrapper.classList.add('opacity-40', 'pointer-events-none');
 

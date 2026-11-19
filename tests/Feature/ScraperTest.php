@@ -251,3 +251,79 @@ test('it handles apify run failure gracefully', function () {
         ])
         ->assertJsonPath('message', fn ($msg) => str_contains($msg, 'FAILED'));
 });
+
+test('it starts an async scrape run and polls status', function () {
+    Http::fake([
+        'https://api.apify.com/v2/acts/*/runs' => Http::response([
+            'data' => [
+                'id' => 'run_async_123',
+                'status' => 'READY',
+                'defaultDatasetId' => 'dataset_async_123',
+            ],
+        ], 201),
+        'https://api.apify.com/v2/actor-runs/run_async_123' => Http::sequence()
+            ->push([
+                'data' => [
+                    'id' => 'run_async_123',
+                    'status' => 'RUNNING',
+                    'defaultDatasetId' => 'dataset_async_123',
+                ],
+            ], 200)
+            ->push([
+                'data' => [
+                    'id' => 'run_async_123',
+                    'status' => 'SUCCEEDED',
+                    'defaultDatasetId' => 'dataset_async_123',
+                ],
+            ], 200),
+        'https://api.apify.com/v2/datasets/dataset_async_123/items*' => Http::response([
+            [
+                'id' => '999',
+                'username' => 'taylorotwell',
+                'fullName' => 'Taylor Otwell',
+                'biography' => 'Creator of Laravel.',
+                'followersCount' => 300000,
+                'followingCount' => 150,
+                'postsCount' => 200,
+                'verified' => true,
+            ],
+        ], 200),
+    ]);
+
+    // 1. Start async run
+    $startResponse = $this->postJson('/scrape', [
+        'mode' => 'profile',
+        'target' => 'taylorotwell',
+        'async' => true,
+    ]);
+
+    $startResponse->assertOk()
+        ->assertJson([
+            'status' => 'queued',
+            'run_id' => 'run_async_123',
+            'mode' => 'profile',
+            'target' => 'taylorotwell',
+        ]);
+
+    // 2. Poll: first check is running
+    $pollRunning = $this->getJson('/scrape/status/run_async_123?mode=profile&target=taylorotwell');
+    $pollRunning->assertOk()
+        ->assertJson([
+            'status' => 'running',
+            'run_id' => 'run_async_123',
+        ]);
+
+    // 3. Poll: second check is succeeded and returns completed dataset
+    $pollCompleted = $this->getJson('/scrape/status/run_async_123?mode=profile&target=taylorotwell');
+    $pollCompleted->assertOk()
+        ->assertJson([
+            'status' => 'completed',
+            'mode' => 'profile',
+            'target' => 'taylorotwell',
+            'data' => [
+                'username' => 'taylorotwell',
+                'fullName' => 'Taylor Otwell',
+                'followersCount' => 300000,
+            ],
+        ]);
+});

@@ -36,6 +36,11 @@ class InstagramScraperService
      */
     public function scrape(string $mode, string $target, int $limit = 10): array
     {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(max(180, $this->timeout + 30));
+        }
+        @ini_set('max_execution_time', (string) max(180, $this->timeout + 30));
+
         if (empty($this->token)) {
             throw new ApifyException('Apify API token is not configured. Please set APIFY_TOKEN in your environment.');
         }
@@ -63,6 +68,90 @@ class InstagramScraperService
             'data' => $transformed,
             'raw' => $items,
             'count' => is_array($transformed) ? count($transformed) : ($isEmpty ? 0 : 1),
+        ];
+    }
+
+    /**
+     * Start an Actor run asynchronously and return run metadata.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws ApifyException
+     */
+    public function startScrape(string $mode, string $target, int $limit = 10): array
+    {
+        if (empty($this->token)) {
+            throw new ApifyException('Apify API token is not configured. Please set APIFY_TOKEN in your environment.');
+        }
+
+        $actorInput = $this->buildActorInput($mode, $target, $limit);
+
+        return $this->startRun($actorInput);
+    }
+
+    /**
+     * Check the current status of an Actor run and retrieve results if completed.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws ApifyException
+     */
+    public function checkRunStatus(string $runId, string $mode, string $target): array
+    {
+        if (empty($this->token)) {
+            throw new ApifyException('Apify API token is not configured. Please set APIFY_TOKEN in your environment.');
+        }
+
+        $response = Http::withToken($this->token)
+            ->acceptJson()
+            ->timeout(15)
+            ->get("https://api.apify.com/v2/actor-runs/{$runId}");
+
+        if (! $response->successful()) {
+            $errorMsg = $response->json('error.message') ?? $response->body();
+            throw new ApifyException("Failed to check Actor run status: {$errorMsg}");
+        }
+
+        $runData = $response->json('data') ?? [];
+        $status = $runData['status'] ?? 'UNKNOWN';
+
+        if ($status === 'READY') {
+            return [
+                'status' => 'queued',
+                'run_id' => $runId,
+            ];
+        }
+
+        if ($status === 'RUNNING') {
+            return [
+                'status' => 'running',
+                'run_id' => $runId,
+            ];
+        }
+
+        if ($status === 'SUCCEEDED') {
+            $datasetId = $runData['defaultDatasetId'] ?? null;
+            $items = $datasetId ? $this->getDatasetItems($datasetId) : [];
+            $transformed = $this->transformResults($mode, $items, $target);
+
+            $isEmpty = empty($transformed) || (is_array($transformed) && count($transformed) === 0);
+
+            return [
+                'status' => $isEmpty ? 'empty' : 'completed',
+                'mode' => $mode,
+                'target' => $target,
+                'data' => $transformed,
+                'raw' => $items,
+                'count' => is_array($transformed) ? count($transformed) : ($isEmpty ? 0 : 1),
+            ];
+        }
+
+        $statusMessage = $runData['statusMessage'] ?? "Actor run ended with status {$status}.";
+
+        return [
+            'status' => 'failed',
+            'run_id' => $runId,
+            'message' => "Scraper execution {$status}: {$statusMessage}",
         ];
     }
 
@@ -141,6 +230,10 @@ class InstagramScraperService
         $terminalStatuses = ['SUCCEEDED', 'FAILED', 'TIMED-OUT', 'ABORTED'];
 
         while (true) {
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(max(180, $this->timeout + 30));
+            }
+
             if ((time() - $startTime) >= $this->timeout) {
                 throw new ApifyTimeoutException("Apify scraper run timed out after {$this->timeout} seconds.");
             }
@@ -272,6 +365,19 @@ class InstagramScraperService
             $timestamp = Container::getInstance()?->bound('config') ? now()->toIso8601String() : date('c');
         }
 
+        $contentType = $this->determineContentType($item);
+        $rawProductType = $item['productType'] ?? null;
+        $productTypeStr = is_array($rawProductType)
+            ? ($rawProductType['name'] ?? json_encode($rawProductType))
+            : (string) ($rawProductType ?? '');
+
+        $childCount = 0;
+        if (! empty($item['childPosts']) && is_array($item['childPosts'])) {
+            $childCount = count($item['childPosts']);
+        } elseif (! empty($item['images']) && is_array($item['images'])) {
+            $childCount = count($item['images']);
+        }
+
         return [
             'id' => (string) ($item['id'] ?? $shortcode ?? uniqid('post_')),
             'shortcode' => (string) $shortcode,
@@ -281,7 +387,61 @@ class InstagramScraperService
             'timestamp' => (string) $timestamp,
             'displayUrl' => (string) ($displayUrl ?? ''),
             'url' => (string) $url,
+            'type' => (string) ($item['type'] ?? ''),
+            'productType' => $productTypeStr,
+            'contentType' => $contentType,
+            'childCount' => $childCount,
+            'videoUrl' => (string) ($item['videoUrl'] ?? ''),
+            'videoViewCount' => isset($item['videoViewCount']) ? (int) $item['videoViewCount'] : null,
+            'videoPlayCount' => isset($item['videoPlayCount']) ? (int) $item['videoPlayCount'] : null,
         ];
+    }
+
+    /**
+     * Determine the specific content type (Reel, Carousel, Video, Photo)
+     * using the productType metadata and type fields.
+     *
+     * @param  array<string, mixed>  $item
+     */
+    public function determineContentType(array $item): string
+    {
+        $productType = $item['productType'] ?? null;
+        if (is_array($productType)) {
+            $productType = $productType['name'] ?? $productType['type'] ?? '';
+        }
+        $productType = strtolower(trim((string) $productType));
+
+        $type = strtolower(trim((string) ($item['type'] ?? '')));
+        $url = strtolower(trim((string) ($item['url'] ?? '')));
+
+        // 1. Reels: productType "clips", type "reel", or reel URL format
+        if ($productType === 'clips' || $type === 'reel' || str_contains($url, '/reel/')) {
+            return 'Reel';
+        }
+
+        // 2. Carousels: productType "carousel_container", type "sidecar"/"carousel", or multiple slides/child posts
+        if (
+            $productType === 'carousel_container'
+            || $type === 'sidecar'
+            || $type === 'carousel'
+            || (! empty($item['childPosts']) && is_array($item['childPosts']))
+            || (! empty($item['images']) && is_array($item['images']) && count($item['images']) > 1)
+        ) {
+            return 'Carousel';
+        }
+
+        // 3. IGTV long-form videos
+        if ($productType === 'igtv') {
+            return 'IGTV';
+        }
+
+        // 4. Standalone Video feed post
+        if ($type === 'video' || ! empty($item['videoUrl'])) {
+            return 'Video';
+        }
+
+        // 5. Default to standard Photo post
+        return 'Photo';
     }
 
     /**

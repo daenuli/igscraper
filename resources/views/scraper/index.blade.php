@@ -698,10 +698,14 @@
         </div>
         <p>InstaScrape 2026. Public data extracted via Apify Actor infrastructure.</p>
       </div>
-      <div class="flex items-center gap-5 text-neutral-500 font-medium">
+      <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-3 text-neutral-500 font-medium">
         <a href="#docs" onclick="openModal('docs'); return false;" class="hover:text-neutral-900 transition">API Reference</a>
         <a href="#schema" onclick="openModal('about'); return false;" class="hover:text-neutral-900 transition">Actor Schema</a>
         <a href="https://apify.com/apify/instagram-scraper" target="_blank" rel="noopener noreferrer" class="hover:text-neutral-900 transition">Apify Store</a>
+        <span class="hidden sm:block h-4 w-px bg-neutral-200"></span>
+        <div class="shrink-0">
+          <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="nuligiarsyani" data-color="#FFDD00" data-emoji="" data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
+        </div>
       </div>
     </div>
   </footer>
